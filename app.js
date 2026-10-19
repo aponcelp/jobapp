@@ -160,7 +160,7 @@
       <p class="lede">Ranked by priority, warm contacts, fit, pay, due dates and time since the last touch. Tick tasks off here or in To-do.</p>
       <div class="grid g4">
         <div class="stat stat--ink"><span class="stat__k">Days to Dec 31</span><span class="stat__v">${left}</span><span class="stat__s">Goal: signed offer this year</span></div>
-        <div class="stat stat--lime"><span class="stat__k">Interviews live</span><span class="stat__v">${interviews}</span><span class="stat__s">${S.roles.filter(r => r.priority === 4).length} warm follow-ups open</span></div>
+        <div class="stat stat--lime"><span class="stat__k">Interviews live</span><span class="stat__v">${interviews}</span><span class="stat__s">${S.roles.filter(r => r.priority === 4).length} follow-ups open</span></div>
         <div class="stat"><span class="stat__k">Apply now</span><span class="stat__v">${applyNow}</span><span class="stat__s">${S.roles.filter(r => r.priority === 3).length} more good fits</span></div>
         <div class="stat"><span class="stat__k">Due this week</span><span class="stat__v">${dueWeek}</span><span class="stat__s">${overdue ? `<b style="color:var(--red)">${overdue} overdue</b>` : 'nothing overdue'}</span></div>
       </div>

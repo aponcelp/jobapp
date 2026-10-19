@@ -109,6 +109,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .p5 { background: var(--steady); color: var(--ink); }
 .p6 { background: var(--sand); color: #3b2f1e; }
 .p7 { background: var(--sky); color: #2e4553; }
+.p8 { background: #8a2b2b; color: var(--bg); }
 
 /* filter bar */
 .cli { border: 2px solid var(--ink); border-radius: var(--r-m); background: var(--card); overflow: hidden; margin-bottom: 16px; }

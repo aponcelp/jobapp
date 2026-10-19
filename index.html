@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <title>Job Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23b9ff00' stroke='%230a2119' stroke-width='3'/%3E%3C/svg%3E"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <span class="ball" aria-hidden="true"></span>
+        <span class="word"><span>Job Tracker</span></span>
+        <span class="tagpill">2026 search</span>
+        <div class="meta" id="meta"></div>
+      </div>
+    </header>
+
+    <section id="login" class="login hidden">
+      <div class="card">
+        <div class="card__head"><h2>Sign in</h2><span class="sub">private · owner only</span></div>
+        <div class="card__body stack">
+          <p class="sub">Enter your email and tap the sign-in link we send you. Only the owner's account can open this tracker.</p>
+          <form id="loginForm" class="stack">
+            <input type="email" id="email" required placeholder="you@example.com" autocomplete="email"/>
+            <button class="btn btn--primary" type="submit">Email me a sign-in link</button>
+          </form>
+          <p id="loginMsg" class="sub"></p>
+        </div>
+      </div>
+    </section>
+
+    <div id="app" class="hidden">
+      <nav class="tabs" id="tabs" role="tablist"></nav>
+      <main id="view"></main>
+      <p class="foot">Edits save automatically to your private database. Nothing here sends messages or submits applications.</p>
+    </div>
+  </div>
+  <div id="overlay"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

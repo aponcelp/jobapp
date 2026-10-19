@@ -4,7 +4,7 @@
   const sb = window.supabase.createClient(C.url, C.anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
   const db = () => sb.schema(C.schema);
 
-  const PRIO = { 1: 'Interview this week', 2: 'Apply now', 3: 'Apply', 4: 'Follow up', 5: 'Applied, waiting', 6: 'Stalled', 7: 'Closed' };
+  const PRIO = { 1: 'Interview this week', 2: 'Apply now', 3: 'Apply', 4: 'Follow up', 5: 'Applied, waiting', 6: 'Stalled', 7: 'Closed', 8: 'Rejected' };
   const LANES = ['BizOps/Special Projects', 'Customer Strategy & Ops', 'Product/Product Ops'];
   const TODO_GROUPS = [['apply', 'Apply'], ['outreach', 'Outreach'], ['follow-up', 'Follow-ups'], ['prep', 'Prep'], ['other', 'Other']];
   const TABS = [['focus', 'Today'], ['progress', 'Progress'], ['pipeline', 'Pipeline'], ['todo', 'To-do'], ['new', 'New roles'], ['resumes', 'Résumés'], ['contacts', 'Contacts']];
@@ -97,7 +97,7 @@
   }
   const warmFor = company => { const p = personFor({ company }); return p && p.warm ? p.name : null; };
   function scoreRole(r) {
-    const why = []; let s = { 1: 100, 2: 70, 3: 45, 4: 55, 5: 12, 6: 4, 7: 0 }[r.priority] ?? 10;
+    const why = []; let s = { 1: 100, 2: 70, 3: 45, 4: 55, 5: 12, 6: 4, 7: 0, 8: 0 }[r.priority] ?? 10;
     if (r.priority === 1) why.push(['Interview', 'chip--lime']);
     if (r.priority === 1) s += 30;
     const per = personFor(r);
@@ -203,7 +203,7 @@
     const thisWeekWarm = thisWeek.filter(r => personFor(r)).length;
     const queued = S.roles.filter(r => [2, 3].includes(r.priority)).length;
     const [tLo, tHi] = C.weeklyTarget;
-    const byP = [1, 2, 3, 4, 5, 6, 7].map(p => [p, S.roles.filter(r => r.priority === p).length]);
+    const byP = [1, 2, 3, 4, 5, 6, 7, 8].map(p => [p, S.roles.filter(r => r.priority === p).length]);
     const maxP = Math.max(1, ...byP.map(x => x[1]));
     const doneTasks = S.tasks.filter(t => t.done).length;
     const lanes = LANES.map(l => [l, active.filter(r => r.lane === l).length]);
@@ -241,7 +241,7 @@
       <div class="cli">
         <div class="cli__row"><span class="cli__key">Search</span><input type="search" id="pq" placeholder="Company, role, notes" value="${esc(S.f.q)}"/></div>
         <div class="cli__row"><span class="cli__key">Lane</span><div class="chips" id="plane">${['', ...LANES].map(l => `<button class="seg" data-v="${esc(l)}" aria-pressed="${S.f.lane === l}">${esc(l || 'All')}</button>`).join('')}</div></div>
-        <div class="cli__row"><span class="cli__key">Priority</span><div class="chips" id="pprio">${['', 1, 2, 3, 4, 5, 6, 7].map(p => `<button class="seg" data-v="${p}" aria-pressed="${String(S.f.prio) === String(p)}">${p ? p + ' ' + PRIO[p] : 'All'}</button>`).join('')}</div></div>
+        <div class="cli__row"><span class="cli__key">Priority</span><div class="chips" id="pprio">${['', 1, 2, 3, 4, 5, 6, 7, 8].map(p => `<button class="seg" data-v="${p}" aria-pressed="${String(S.f.prio) === String(p)}">${p ? p + ' ' + PRIO[p] : 'All'}</button>`).join('')}</div></div>
         <div class="cli__row"><span class="cli__key">View</span><div class="chips">
           <button class="seg" data-view="board" aria-pressed="${S.pipeView === 'board'}">Board</button><button class="seg" data-view="table" aria-pressed="${S.pipeView === 'table'}">Table</button>
           <button class="seg" id="pclosed" aria-pressed="${S.f.closed}">Show closed</button><button class="btn btn--sm btn--lime" id="padd">+ Add role</button></div></div>
@@ -257,7 +257,7 @@
   function drawPipe() {
     const el = $('#pbody'); const rows = filtered();
     if (S.pipeView === 'board') {
-      const cols = [1, 2, 3, 4, 5, 6, 7].filter(p => S.f.closed || p !== 7).filter(p => !S.f.prio || +S.f.prio === p);
+      const cols = [1, 2, 3, 4, 5, 6, 7, 8].filter(p => S.f.closed || p !== 7).filter(p => !S.f.prio || +S.f.prio === p);
       el.innerHTML = `<div class="board">${cols.map(p => {
         const rs = rows.filter(r => r.priority === p).sort((a, b) => scoreRole(b).s - scoreRole(a).s);
         return `<section class="col" data-p="${p}"><div class="col__head">${pz(p)}<b>${rs.length}</b></div><div class="col__body">${rs.map(r => `
@@ -282,7 +282,7 @@
       const th = (key, label) => `<th data-sort="${key}">${label}${k === key ? (d > 0 ? ' ↑' : ' ↓') : ''}</th>`;
       el.innerHTML = `<div class="card"><div class="tablewrap"><table class="t"><thead><tr>${th('priority', 'Priority')}${th('company', 'Company')}${th('role', 'Role')}${th('stage', 'Stage')}${th('status', 'Status')}${th('next_step', 'Next step')}${th('next_step_due', 'Due')}${th('lane', 'Lane')}${th('date', 'Updated')}<th>Links</th></tr></thead><tbody>${rows.map(r => `
         <tr data-id="${r.id}">
-          <td><select class="ed" data-f="priority">${[1, 2, 3, 4, 5, 6, 7].map(p => `<option value="${p}" ${r.priority === p ? 'selected' : ''}>${p} ${PRIO[p]}</option>`).join('')}</select></td>
+          <td><select class="ed" data-f="priority">${[1, 2, 3, 4, 5, 6, 7, 8].map(p => `<option value="${p}" ${r.priority === p ? 'selected' : ''}>${p} ${PRIO[p]}</option>`).join('')}</select></td>
           <td class="co"><button class="linkbtn" data-open="${r.id}">${esc(r.company)}</button></td>
           <td>${esc(r.role)}</td>
           <td><input class="ed" data-f="stage" value="${esc(r.stage)}"/></td>
@@ -313,7 +313,7 @@
       <div style="display:flex;gap:10px;align-items:center"><h3>${id ? esc(r.company) : 'Add a role'}</h3><span style="margin-left:auto"></span><button class="btn btn--sm" id="dclose">Close</button></div>
       ${id ? `<p class="sub">${esc(r.role)}</p>` : ''}
       ${id ? '' : f('company', 'Company') + f('role', 'Role')}
-      <div class="row2"><div class="field"><label>Priority</label><select class="ed" data-f="priority">${[1, 2, 3, 4, 5, 6, 7].map(p => `<option value="${p}" ${r.priority === p ? 'selected' : ''}>${p} · ${PRIO[p]}</option>`).join('')}</select></div>
+      <div class="row2"><div class="field"><label>Priority</label><select class="ed" data-f="priority">${[1, 2, 3, 4, 5, 6, 7, 8].map(p => `<option value="${p}" ${r.priority === p ? 'selected' : ''}>${p} · ${PRIO[p]}</option>`).join('')}</select></div>
         <div class="field"><label>Lane</label><select class="ed" data-f="lane">${['', ...LANES].map(l => `<option ${r.lane === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>
       <div class="row2">${f('stage', 'Stage')}${f('status', 'Status')}</div>
       ${f('next_step', 'Next step')}

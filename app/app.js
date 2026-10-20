@@ -140,13 +140,14 @@
     const t0 = today(), left = days(pd(C.goalDate), t0);
     const items = [];
     const roleWithTasks = new Set(S.tasks.filter(t => !t.done && t.role_id).map(t => t.role_id));
+    const roleWithApply = new Set(S.tasks.filter(t => !t.done && t.type === 'apply' && t.role_id).map(t => t.role_id));
     S.roles.filter(r => r.priority && r.priority <= 4).forEach(r => {
+      if (roleWithApply.has(r.id)) return; // its open apply task stands in for it (no duplicates)
       const { s, why } = scoreRole(r);
       items.push({ kind: 'role', id: r.id, s, why, title: `${r.company} · ${r.role}`, sub: r.next_step || r.status || '', p: r.priority, links: [link(r.link, 'Posting'), r.resume_code ? link(resumeUrl(r.resume_code), 'Résumé ' + r.resume_code) : ''] });
     });
     S.tasks.filter(t => !t.done).forEach(t => {
       const { s, why } = scoreTask(t);
-      if (t.type === 'apply' && t.role_id && S.roles.some(r => r.id === t.role_id && r.priority <= 4) && !pd(t.due)) return; // the role row already covers it
       items.push({ kind: 'task', id: t.id, s, why, title: t.title, sub: t.notes || '', type: t.type, links: [link(t.posting_url, 'Posting'), link(t.contact_url, 'Contact'), t.resume_code ? link(t.resume_url || resumeUrl(t.resume_code), 'Résumé ' + t.resume_code) : ''] });
     });
     items.sort((a, b) => b.s - a.s);

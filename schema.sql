@@ -106,3 +106,17 @@ alter table jobs.tasks add column if not exists notes text;
 alter table jobs.resumes drop constraint if exists resumes_version_key;
 alter table jobs.resumes add column if not exists vkey text;
 do $$ begin alter table jobs.resumes add constraint resumes_vkey_key unique (vkey); exception when others then null; end $$;
+
+-- Focus plays (Oct 21 2026): one row per company he is going deep on.
+create table if not exists jobs.focus (
+  id bigserial primary key, rank int, company text not null, headline text,
+  match text[] default '{}', role_ids int[] default '{}',
+  decides text, way_in text, angle text, proof text, gap text, steps text,
+  docs jsonb default '[]'::jsonb, status text default 'active', notes text,
+  created_at timestamptz default now(), updated_at timestamptz default now(), app_edited_at timestamptz);
+alter table jobs.focus enable row level security;
+drop policy if exists owner_all on jobs.focus;
+create policy owner_all on jobs.focus for all to authenticated using (jobs.is_owner()) with check (jobs.is_owner());
+grant select, insert, update, delete on jobs.focus to authenticated;
+drop trigger if exists trg_touch on jobs.focus;
+create trigger trg_touch before insert or update on jobs.focus for each row execute function jobs.touch();

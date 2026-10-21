@@ -7,9 +7,9 @@
   const PRIO = { 1: 'Interview this week', 2: 'Apply now', 3: 'Apply', 4: 'Follow up', 5: 'Applied, waiting', 6: 'Stalled', 7: 'Closed', 8: 'Rejected' };
   const LANES = ['BizOps/Special Projects', 'Customer Strategy & Ops', 'Product/Product Ops'];
   const TODO_GROUPS = [['apply', 'Apply'], ['outreach', 'Outreach'], ['follow-up', 'Follow-ups'], ['prep', 'Prep'], ['other', 'Other']];
-  const TABS = [['focus', 'Today'], ['progress', 'Progress'], ['pipeline', 'Pipeline'], ['todo', 'To-do'], ['new', 'New roles'], ['resumes', 'Résumés'], ['contacts', 'Contacts']];
+  const TABS = [['focus', 'Today'], ['plays', 'Focus'], ['progress', 'Progress'], ['pipeline', 'Pipeline'], ['todo', 'To-do'], ['new', 'New roles'], ['resumes', 'Résumés'], ['contacts', 'Contacts']];
 
-  const S = { roles: [], tasks: [], resumes: [], contacts: [], new_roles: [], activity: [], meta: null,
+  const S = { focus: [], playsDone: {}, roles: [], tasks: [], resumes: [], contacts: [], new_roles: [], activity: [], meta: null,
               tab: (location.hash.slice(1) || localStorage.getItem('jt_tab') || 'focus'),
               pipeView: localStorage.getItem('jt_pipeview') || 'board',
               f: { q: '', lane: '', prio: '', closed: false }, todoShowDone: false, nrFilter: 'new', sort: { k: 'priority', d: 1 } };
@@ -69,10 +69,10 @@
   // ---------- load ----------
   async function loadAll() {
     const q = t => db().from(t).select('*').limit(5000);
-    const [r, t, rs, c, n, m] = await Promise.all([q('roles'), q('tasks').order('sort'), q('resumes').order('id'), q('contacts').order('company'), q('new_roles'), db().from('sync_meta').select('*').eq('id', 1).maybeSingle()]);
+    const [r, t, rs, c, n, m, fo] = await Promise.all([q('roles'), q('tasks').order('sort'), q('resumes').order('id'), q('contacts').order('company'), q('new_roles'), db().from('sync_meta').select('*').eq('id', 1).maybeSingle(), q('focus').order('rank')]);
     const err = [r, t, rs, c, n].find(x => x.error);
     if (err) { $('#view').innerHTML = `<div class="card"><div class="empty">Could not load data: ${esc(err.error.message)}. If this says permission denied, this account isn't the owner.</div></div>`; return; }
-    S.roles = r.data; S.tasks = t.data; S.resumes = rs.data; S.contacts = c.data; S.new_roles = n.data; S.meta = m.data;
+    S.roles = r.data; S.tasks = t.data; S.resumes = rs.data; S.contacts = c.data; S.new_roles = n.data; S.meta = m.data; S.focus = (fo && !fo.error && fo.data) || [];
     await loadActivity(false);
     render();
   }
@@ -128,12 +128,12 @@
   }
   function renderTabs() {
     const openTodo = S.tasks.filter(t => !t.done).length, newN = S.new_roles.filter(n => n.decision === 'new').length;
-    const counts = { todo: openTodo, new: newN, pipeline: S.roles.filter(r => r.priority && r.priority <= 5).length };
+    const counts = { plays: S.focus.filter(f => f.status !== 'closed').length, todo: openTodo, new: newN, pipeline: S.roles.filter(r => r.priority && r.priority <= 5).length };
     $('#tabs').innerHTML = TABS.map(([k, l]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${counts[k] != null ? ` <b>${counts[k]}</b>` : ''}</button>`).join('');
     $('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; S.tab = b.dataset.tab; localStorage.setItem('jt_tab', S.tab); history.replaceState(null, '', '#' + S.tab); render(); };
   }
   function render() { renderMeta(); renderTabs(); renderView(); }
-  function renderView() { const v = $('#view'); ({ focus: vFocus, progress: vProgress, pipeline: vPipeline, todo: vTodo, new: vNew, resumes: vResumes, contacts: vContacts })[S.tab](v); }
+  function renderView() { const v = $('#view'); ({ focus: vFocus, plays: vPlays, progress: vProgress, pipeline: vPipeline, todo: vTodo, new: vNew, resumes: vResumes, contacts: vContacts })[S.tab](v); }
 
   // ---------- Today / Focus ----------
   function vFocus(v) {
@@ -181,6 +181,64 @@
       </div>`;
     v.onclick = async e => {
       const d = e.target.closest('[data-done]'); if (d) { await save('tasks', +d.dataset.done, { done: true, done_at: new Date().toISOString() }); toast('Marked done'); render(); return; }
+      const o = e.target.closest('[data-open]'); if (o) openRole(+o.dataset.open);
+    };
+  }
+
+  // ---------- Focus plays ----------
+  function playParts(f) {
+    const m = new Set((f.match || []).map(norm).concat([norm(f.company)])), rid = new Set(f.role_ids || []);
+    const roles = S.roles.filter(r => rid.has(r.id));
+    const tasks = S.tasks.filter(t => rid.has(t.role_id) || m.has(norm(t.company)));
+    const people = S.contacts.filter(c => m.has(norm(c.company)) && !/no longer at|do not contact/i.test((c.title || '') + ' ' + (c.notes || '')));
+    const docs = [];
+    roles.forEach(r => { if (r.link) docs.push([r.link, 'Posting · ' + r.role.split('(')[0].trim()]); if (r.resume_code && resumeUrl(r.resume_code)) docs.push([resumeUrl(r.resume_code), 'Résumé ' + r.resume_code]); });
+    (f.docs || []).forEach(d => { if (d.url && !docs.some(x => x[0] === d.url)) docs.push([d.url, d.label]); });
+    return { roles, tasks, people, docs };
+  }
+  function vPlays(v) {
+    const t0 = today();
+    const list = S.focus.filter(f => f.status !== 'closed').sort((a, b) => (a.rank || 99) - (b.rank || 99));
+    const sortT = (a, b) => (a.done - b.done) || ((pd(a.due) || 9e15) - (pd(b.due) || 9e15)) || (a.id - b.id);
+    const allOpen = list.flatMap(f => playParts(f).tasks.filter(t => !t.done));
+    const dueToday = [...new Set(allOpen)].filter(t => pd(t.due) && pd(t.due) <= t0).length;
+    const fld = (f, k, label) => `<div class="play__f"><label>${label}</label><textarea class="ed play__ta" data-pf="${k}" data-pid="${f.id}" rows="2">${esc(f[k] || '')}</textarea></div>`;
+    v.innerHTML = `<h1 class="h1">Focused efforts.</h1>
+      <p class="lede">The roles we're going deep on, each with a named person, a way in and a small proof piece. Every task, draft, contact and doc for a company sits under it. Edits save automatically. Nothing is sent from here.</p>
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="stat stat--ink"><span class="stat__k">Companies</span><span class="stat__v">${list.length}</span><span class="stat__s">depth over volume</span></div>
+        <div class="stat stat--lime"><span class="stat__k">Due today or late</span><span class="stat__v">${dueToday}</span><span class="stat__s">across all plays</span></div>
+        <div class="stat"><span class="stat__k">Open steps</span><span class="stat__v">${new Set(allOpen).size}</span><span class="stat__s">tasks + outreach</span></div>
+        <div class="stat"><span class="stat__k">Interviews</span><span class="stat__v">${list.filter(f => playParts(f).roles.some(r => r.priority === 1)).length}</span><span class="stat__s">among these</span></div>
+      </div>
+      <div class="stack">${list.map(f => { const P = playParts(f); const open = P.tasks.filter(t => !t.done), done = P.tasks.length - open.length;
+        const late = open.filter(t => pd(t.due) && pd(t.due) < t0).length, td = open.filter(t => pd(t.due) && days(pd(t.due), t0) === 0).length;
+        const shown = (S.playsDone[f.id] ? P.tasks : open).slice().sort(sortT);
+        return `<details class="card play" open data-play="${f.id}">
+          <summary class="card__head" style="cursor:pointer;list-style:none">
+            <span class="rank__n">${String(f.rank || '').padStart(2, '0')}</span><h2>${esc(f.company)}</h2><span class="sub">${esc(f.headline || '')}</span>
+            <span class="right">${P.roles.map(r => pz(r.priority)).join('')}${late ? `<span class="chip chip--over">${late} late</span>` : ''}${td ? `<span class="chip chip--due">${td} today</span>` : ''}<span class="chip">${open.length} open</span></span>
+          </summary>
+          <div class="card__body">
+            <div class="play__grid">${fld(f, 'decides', 'Who decides')}${fld(f, 'way_in', 'Way in')}${fld(f, 'angle', 'Angle')}${fld(f, 'proof', 'Proof piece')}${fld(f, 'gap', 'Gap to address')}${fld(f, 'notes', 'Notes')}</div>
+            <div class="play__cols">
+              <div><div class="play__h">Steps, tasks & outreach <button class="linkbtn" data-pdone="${f.id}">${S.playsDone[f.id] ? 'Hide done' : `Show done (${done})`}</button> <button class="btn btn--sm btn--lime" data-padd="${esc(f.company)}">+ Add</button></div>
+                <ul class="todo">${shown.map(taskLi).join('') || '<li class="empty" style="display:block">No open steps.</li>'}</ul></div>
+              <div>
+                <div class="play__h">People</div>
+                <div class="stack play__people">${P.people.map(c => `<div><b>${esc(c.name)}</b> <span class="sub">${esc(c.title || '')}</span> ${link(c.url, 'Profile')} ${c.email ? link('mailto:' + c.email, 'Email') : ''}${c.warm_path && !/^none/i.test(c.warm_path) ? `<div class="sub">${esc(c.warm_path)}</div>` : ''}</div>`).join('') || '<span class="sub">No contacts yet.</span>'}</div>
+                <div class="play__h" style="margin-top:14px">Docs</div>
+                <div class="todo__links" style="flex-wrap:wrap">${P.docs.map(([u, l]) => link(u, l)).join('') || '<span class="sub">No docs yet.</span>'}</div>
+                ${P.roles.length ? `<div class="play__h" style="margin-top:14px">Roles</div><div class="stack">${P.roles.map(r => `<div><button class="linkbtn" data-open="${r.id}">${esc(r.role)}</button> <span class="sub">${esc(r.next_step || r.status || '')}</span></div>`).join('')}</div>` : ''}
+              </div>
+            </div>
+          </div>
+        </details>`; }).join('') || '<div class="card"><div class="empty">No focus plays yet.</div></div>'}</div>`;
+    v.querySelectorAll('[data-pf]').forEach(a => a.oninput = () => saveLater('focus', +a.dataset.pid, { [a.dataset.pf]: a.value }));
+    bindTodo(v);
+    v.onclick = e => {
+      const d = e.target.closest('[data-pdone]'); if (d) { e.preventDefault(); const id = +d.dataset.pdone; S.playsDone[id] = !S.playsDone[id]; vPlays(v); return; }
+      const a = e.target.closest('[data-padd]'); if (a) { e.preventDefault(); openTaskForm(); $('#nt_company').value = a.dataset.padd; return; }
       const o = e.target.closest('[data-open]'); if (o) openRole(+o.dataset.open);
     };
   }

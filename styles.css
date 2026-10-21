@@ -222,3 +222,14 @@ details.draft[open] summary::before { content: "–"; }
 .empty { padding: 24px 18px; color: var(--ink-2); }
 .foot { margin-top: 28px; font: 400 12px/1.4 var(--mono); color: var(--ink-2); }
 #loginForm { display: grid; gap: 12px; } #loginForm > * { margin: 0 !important; }
+
+/* Focus plays */
+.play .rank__n { font: 600 12px/1 var(--mono); opacity: .6; }
+.play__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; margin-bottom: 16px; }
+.play__f label { display: block; font: 600 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 4px; }
+.play__ta { width: 100%; min-height: 64px; resize: vertical; font: 400 13px/1.4 var(--sans); }
+.play__cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; }
+.play__h { display: flex; align-items: center; gap: 10px; font: 800 13px/1.1 var(--display); font-stretch: 112%; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.play__h .btn { margin-left: auto; }
+.play__people > div { font-size: 13px; }
+@media (max-width: 900px) { .play__grid, .play__cols { grid-template-columns: minmax(0, 1fr); } }

@@ -14,3 +14,4 @@ Sign-in is an email magic link (public sign-ups are disabled).
 ## Hosting
 - GitHub Pages: the `gh-pages` branch mirrors `app/` (workflow `.github/workflows/pages.yml`).
 - Vercel: import the repo with **Root Directory = `app`**, framework "Other", no build command.
+

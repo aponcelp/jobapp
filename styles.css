@@ -233,3 +233,24 @@ details.draft[open] summary::before { content: "–"; }
 .play__h .btn { margin-left: auto; }
 .play__people > div { font-size: 13px; }
 @media (max-width: 900px) { .play__grid, .play__cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Outreach ---------- */
+.oc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+.oc { border: 2px solid var(--ink); border-radius: var(--r-m); background: var(--card); padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.oc--due { box-shadow: 4px 4px 0 var(--clay); }
+.oc__top { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.oc__n { font: 700 17px/1.25 var(--sans); word-break: break-word; }
+.oc__w { color: var(--ink-2); font-size: 13.5px; margin-top: 2px; }
+.oc__st { width: auto; min-width: 0; max-width: 150px; border: 1.5px solid var(--ink); border-radius: var(--r-pill); font-weight: 600; flex: none; }
+.oc__role { font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.oc__s { font-size: 13px; color: var(--ink-2); word-break: break-word; }
+.oc__next { border: 1.5px solid var(--ink); border-radius: var(--r-s); background: var(--bg); padding: 10px 12px; display: grid; gap: 8px; }
+.oc__nh { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.oc__next .draft__text { min-height: 110px; }
+.oc__btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.oc__fb { display: grid; gap: 6px; justify-items: start; }
+.oc__fbt { border: 1px solid var(--line); background: #fff; min-height: 44px; resize: vertical; font: 400 13.5px/1.4 var(--sans); }
+.oc__pend { font-size: 13px; background: #ffe1d3; border: 1px solid var(--clay); border-radius: 10px; padding: 8px 10px; color: var(--clay-ink); width: 100%; box-sizing: border-box; }
+.oc__hist pre { white-space: pre-wrap; font: 400 12.5px/1.45 var(--sans); margin: 4px 0 0; color: var(--ink-2); }
+.oc__hist ul { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+@media (max-width: 700px) { .oc-grid { grid-template-columns: minmax(0, 1fr); } .oc__st { max-width: 130px; } }

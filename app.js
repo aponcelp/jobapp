@@ -7,9 +7,10 @@
   const PRIO = { 1: 'Interview this week', 2: 'Apply now', 3: 'Apply', 4: 'Follow up', 5: 'Applied, waiting', 6: 'Stalled', 7: 'Closed', 8: 'Rejected' };
   const LANES = ['BizOps/Special Projects', 'Customer Strategy & Ops', 'Product/Product Ops'];
   const TODO_GROUPS = [['apply', 'Apply'], ['outreach', 'Outreach'], ['follow-up', 'Follow-ups'], ['prep', 'Prep'], ['other', 'Other']];
-  const TABS = [['focus', 'Today'], ['plays', 'Focus'], ['progress', 'Progress'], ['pipeline', 'Pipeline'], ['todo', 'To-do'], ['new', 'New roles'], ['resumes', 'Résumés'], ['contacts', 'Contacts']];
+  const TABS = [['focus', 'Today'], ['plays', 'Focus'], ['progress', 'Progress'], ['pipeline', 'Pipeline'], ['todo', 'To-do'], ['outreach', 'Outreach'], ['new', 'New roles'], ['resumes', 'Résumés'], ['contacts', 'Contacts']];
 
-  const S = { focus: [], playsDone: {}, roles: [], tasks: [], resumes: [], contacts: [], new_roles: [], activity: [], meta: null,
+  const S = { focus: [], playsDone: {}, roles: [], tasks: [], resumes: [], contacts: [], new_roles: [], activity: [], meta: null, outreach: [], oevents: [], oLimit: 60,
+              of: { f: localStorage.getItem('jt_of') || 'due', q: '', co: '' },
               tab: (location.hash.slice(1) || localStorage.getItem('jt_tab') || 'focus'),
               pipeView: localStorage.getItem('jt_pipeview') || 'board',
               f: { q: '', lane: '', prio: '', closed: false }, todoShowDone: false, nrFilter: 'new', sort: { k: 'priority', d: 1 } };
@@ -69,10 +70,12 @@
   // ---------- load ----------
   async function loadAll() {
     const q = t => db().from(t).select('*').limit(5000);
-    const [r, t, rs, c, n, m, fo] = await Promise.all([q('roles'), q('tasks').order('sort'), q('resumes').order('id'), q('contacts').order('company'), q('new_roles'), db().from('sync_meta').select('*').eq('id', 1).maybeSingle(), q('focus').order('rank')]);
+    const [r, t, rs, c, n, m, fo, ou, oe] = await Promise.all([q('roles'), q('tasks').order('sort'), q('resumes').order('id'), q('contacts').order('company'), q('new_roles'), db().from('sync_meta').select('*').eq('id', 1).maybeSingle(), q('focus').order('rank'), q('outreach').order('id'), db().from('outreach_events').select('*').order('at', { ascending: false }).limit(2000)]);
     const err = [r, t, rs, c, n].find(x => x.error);
     if (err) { $('#view').innerHTML = `<div class="card"><div class="empty">Could not load data: ${esc(err.error.message)}. If this says permission denied, this account isn't the owner.</div></div>`; return; }
     S.roles = r.data; S.tasks = t.data; S.resumes = rs.data; S.contacts = c.data; S.new_roles = n.data; S.meta = m.data; S.focus = (fo && !fo.error && fo.data) || [];
+    S.outreach = (ou && !ou.error && ou.data) || []; S.oevents = (oe && !oe.error && oe.data) || [];
+    if (ou && ou.error) console.warn('outreach load failed', ou.error);
     await loadActivity(false);
     render();
   }
@@ -128,12 +131,12 @@
   }
   function renderTabs() {
     const openTodo = S.tasks.filter(t => !t.done).length, newN = S.new_roles.filter(n => n.decision === 'new').length;
-    const counts = { plays: S.focus.filter(f => f.status !== 'closed').length, todo: openTodo, new: newN, pipeline: S.roles.filter(r => r.priority && r.priority <= 5).length };
+    const counts = { outreach: S.outreach.filter(oDueNow).length, plays: S.focus.filter(f => f.status !== 'closed').length, todo: openTodo, new: newN, pipeline: S.roles.filter(r => r.priority && r.priority <= 5).length };
     $('#tabs').innerHTML = TABS.map(([k, l]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${counts[k] != null ? ` <b>${counts[k]}</b>` : ''}</button>`).join('');
     $('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; S.tab = b.dataset.tab; localStorage.setItem('jt_tab', S.tab); history.replaceState(null, '', '#' + S.tab); render(); };
   }
   function render() { renderMeta(); renderTabs(); renderView(); }
-  function renderView() { const v = $('#view'); ({ focus: vFocus, plays: vPlays, progress: vProgress, pipeline: vPipeline, todo: vTodo, new: vNew, resumes: vResumes, contacts: vContacts })[S.tab](v); }
+  function renderView() { const v = $('#view'); ({ focus: vFocus, plays: vPlays, progress: vProgress, pipeline: vPipeline, todo: vTodo, outreach: vOutreach, new: vNew, resumes: vResumes, contacts: vContacts })[S.tab](v); }
 
   // ---------- Today / Focus ----------
   function vFocus(v) {
@@ -463,6 +466,165 @@
       const row = await insert('tasks', { title, type: $('#nt_type').value, due: $('#nt_due').value || null, company: company || null, contact_name: $('#nt_contact').value || null, contact_url: $('#nt_url').value || null, draft: $('#nt_draft').value || null, grp: 'Added in app', priority: 2, role_id: role ? role.id : null, slug: 'app-' + Date.now() });
       if (row) { toast('Added'); closeDrawer(); }
     };
+  }
+
+  // ---------- Outreach ----------
+  const O_STATUS = [['unknown', 'Unknown'], ['not_contacted', 'Not contacted'], ['sent', 'Sent · waiting'], ['replied', 'Replied'], ['scheduled', 'Call scheduled'], ['closed', 'Closed']];
+  const O_TYPES = ['connection note', 'dm', 'nudge', 'email', 'reply', 'other'];
+  const O_FILTERS = [['due', 'Due now'], ['active', 'All active'], ['not', 'Not contacted'], ['waiting', 'Waiting reply'], ['scheduled', 'Calls'], ['revise', 'Needs draft'], ['closed', 'Closed']];
+  const oClosed = o => o.status === 'closed';
+  const oDueNow = o => !oClosed(o) && !!o.next_type && !!pd(o.next_due) && pd(o.next_due) <= today();
+  const oMatch = (o, f) => ({
+    due: oDueNow(o),
+    active: !oClosed(o),
+    not: !oClosed(o) && o.sent_before !== 'yes' && ['unknown', 'not_contacted'].includes(o.status),
+    waiting: o.status === 'sent',
+    scheduled: o.status === 'scheduled' || (!!o.meeting_at && new Date(o.meeting_at) >= today()),
+    revise: !oClosed(o) && ['needs_revision', 'needs_draft'].includes(o.draft_state),
+    closed: oClosed(o),
+  })[f];
+  const fmtET = s => s ? new Date(s).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET' : '';
+  const todayISO = () => { const d = today(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  function oSentBadge(o) {
+    if (o.sent_before === 'yes') return `<span class="chip chip--warm">Sent before${o.last_sent ? ' · ' + fmtD(o.last_sent) : ''}</span>`;
+    if (o.sent_before === 'no') return '<span class="chip">Never sent</span>';
+    return '<span class="chip" title="No record either way">Sent before: unknown</span>';
+  }
+  function oDraftBadge(o) {
+    if (o.draft_state === 'needs_revision') return '<span class="chip chip--due">Feedback pending · revision coming</span>';
+    if (o.draft_state === 'needs_draft') return '<span class="chip chip--due">Needs draft</span>';
+    if (o.draft_state === 'revised') return `<span class="chip chip--lime">Revised · v${o.draft_version}${o.draft_updated_at ? ' · ' + fmtTs(o.draft_updated_at) : ''}</span>`;
+    if (o.next_draft) return `<span class="chip">Draft v${o.draft_version}</span>`;
+    return '';
+  }
+  function oCard(o) {
+    const r = o.role_id && roleById(o.role_id);
+    const due = pd(o.next_due), dd = due ? days(due, today()) : null;
+    const evs = S.oevents.filter(e => e.outreach_id === o.id);
+    const fbs = evs.filter(e => e.kind === 'feedback');
+    const meet = o.meeting_at ? `<span class="chip chip--lime">Call ${esc(fmtET(o.meeting_at))}</span>` : '';
+    return `<article class="oc ${oDueNow(o) ? 'oc--due' : ''}" data-oid="${o.id}">
+      <div class="oc__top">
+        <div style="min-width:0">
+          <div class="oc__n">${o.url ? `<a class="a" href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.name)} ↗</a>` : esc(o.name)}</div>
+          <div class="oc__w">${esc([o.title, o.company].filter(Boolean).join(' · '))}</div>
+        </div>
+        <select class="ed oc__st" data-ost="${o.id}" aria-label="Status">${O_STATUS.map(([k, l]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      </div>
+      <div class="chips">
+        ${o.relation ? `<span class="chip chip--ink">${esc(o.relation)}</span>` : ''}
+        ${oSentBadge(o)}
+        ${o.channel ? `<span class="chip">${esc(o.channel)}${o.connected === 'yes' ? ' · connected' : o.connected === 'no' ? ' · not connected' : ''}</span>` : ''}
+        ${meet}
+        ${o.followups_sent ? `<span class="chip">${o.followups_sent} follow-up${o.followups_sent > 1 ? 's' : ''} sent</span>` : ''}
+      </div>
+      ${o.role_label || r ? `<div class="oc__role">For: ${r ? `<button class="linkbtn" data-open="${r.id}">${esc(o.role_label || (r.company + ' · ' + r.role))}</button> ${pz(r.priority)}` : esc(o.role_label)}</div>` : ''}
+      ${o.last_sent_summary ? `<div class="oc__s"><b>Last sent:</b> ${esc(o.last_sent_summary)}</div>` : ''}
+      <div class="oc__next">
+        <div class="oc__nh"><b>Next:</b>
+          <select class="ed" data-otype="${o.id}" style="width:auto;min-width:0">${['', ...O_TYPES].map(t => `<option value="${t}" ${o.next_type === t || (!o.next_type && !t) ? 'selected' : ''}>${t || '—'}</option>`).join('')}</select>
+          <input class="ed" type="date" data-odue="${o.id}" value="${esc(o.next_due || '')}" style="width:auto;min-width:0" aria-label="Due date"/>
+          ${dd != null && !oClosed(o) ? `<span class="chip ${dd < 0 ? 'chip--over' : dd <= 1 ? 'chip--due' : ''}">${dd < 0 ? `Overdue ${-dd}d` : dd === 0 ? 'Due today' : `Due ${fmtD(o.next_due)}`}</span>` : ''}
+          ${oDraftBadge(o)}
+        </div>
+        ${o.draft_ref ? `<div class="oc__s">Draft: ${esc(o.draft_ref)}</div>` : ''}
+        <textarea class="draft__text" data-odraft="${o.id}" placeholder="${o.draft_state === 'needs_draft' ? 'No draft yet. Leave feedback below to get one written, or paste your own.' : 'No draft saved here.'}">${esc(o.next_draft || '')}</textarea>
+        <div class="oc__btns">
+          <button class="btn btn--sm btn--primary" data-ocopy="${o.id}">Copy</button>
+          <button class="btn btn--sm btn--lime" data-osent="${o.id}">Mark sent</button>
+          ${o.email ? link('mailto:' + o.email, o.email) : ''}
+        </div>
+      </div>
+      <div class="oc__fb">
+        ${o.draft_state === 'needs_revision' && o.feedback ? `<div class="oc__pend"><b>Pending feedback</b> (${esc(fmtTs(o.feedback_at))}): ${esc(o.feedback)}</div>` : ''}
+        <textarea class="ed oc__fbt" data-ofb="${o.id}" rows="2" placeholder="Feedback on this draft (e.g. shorter, mention the Miami office, don't name the role)"></textarea>
+        <button class="btn btn--sm" data-ofbs="${o.id}">Submit feedback</button>
+      </div>
+      ${(o.history || o.notes || fbs.length) ? `<details class="draft"><summary>History & notes</summary><div class="draft__box oc__hist">
+        ${o.history ? `<div><b>History</b><pre>${esc(o.history)}</pre></div>` : ''}
+        ${evs.length ? `<div><b>In-app log</b><ul>${evs.map(e => `<li><span class="sub">${esc(fmtTs(e.at))} · ${esc(e.kind)}${e.kind === 'feedback' ? (e.resolved_at ? ' · resolved' : ' · pending') : ''}</span> ${esc(e.body || '')}</li>`).join('')}</ul></div>` : ''}
+        ${o.notes ? `<div><b>Notes</b><pre>${esc(o.notes)}</pre></div>` : ''}
+      </div></details>` : ''}
+    </article>`;
+  }
+  function vOutreach(v) {
+    const F = S.of;
+    const cos = [...new Set(S.outreach.map(o => o.company).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const cnt = f => S.outreach.filter(o => oMatch(o, f)).length;
+    v.innerHTML = `<h1 class="h1">Outreach.</h1>
+      <p class="lede">One card per person: who they are, whether you've written before, and the next message. Copy it, send it yourself, then tap Mark sent (next nudge lands in 6 days, two follow-ups max). Feedback on a draft flags it for a rewrite. Nothing is sent from here.</p>
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="stat stat--ink"><span class="stat__k">Due now</span><span class="stat__v">${cnt('due')}</span><span class="stat__s">today or overdue</span></div>
+        <div class="stat stat--lime"><span class="stat__k">Calls booked</span><span class="stat__v">${cnt('scheduled')}</span><span class="stat__s">${S.outreach.filter(o => o.meeting_at && new Date(o.meeting_at) >= today()).map(o => esc(o.name.split(' ')[0])).join(', ') || 'none upcoming'}</span></div>
+        <div class="stat"><span class="stat__k">Waiting reply</span><span class="stat__v">${cnt('waiting')}</span><span class="stat__s">sent, no answer logged</span></div>
+        <div class="stat"><span class="stat__k">Needs draft</span><span class="stat__v">${cnt('revise')}</span><span class="stat__s">${S.outreach.filter(o => o.draft_state === 'needs_revision').length} with feedback pending</span></div>
+      </div>
+      <div class="chips" style="margin-bottom:10px">${O_FILTERS.map(([k, l]) => `<button class="seg" data-of="${k}" aria-pressed="${F.f === k}">${l} · ${cnt(k)}</button>`).join('')}</div>
+      <div class="cli"><div class="cli__row"><span class="cli__key">Search</span><input type="search" id="oq" placeholder="Name, company, title, draft" value="${esc(F.q)}"/></div>
+        <div class="cli__row"><span class="cli__key">Company</span><select class="ed" id="oco"><option value="">All companies</option>${cos.map(c => `<option ${F.co === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div></div>
+      <div id="obody"></div>`;
+    const draw = () => {
+      const q = F.q.toLowerCase();
+      const ts = o => { const m = o.meeting_at && new Date(o.meeting_at) >= today() ? new Date(o.meeting_at).getTime() : null; return m || (pd(o.next_due) ? pd(o.next_due).getTime() : 9e15); };
+      const list = S.outreach.filter(o => oMatch(o, F.f) && (!F.co || o.company === F.co) && (!q || [o.name, o.company, o.title, o.role_label, o.next_draft, o.relation].join(' ').toLowerCase().includes(q)))
+        .sort((a, b) => (ts(a) - ts(b)) || ((a.status === 'closed') - (b.status === 'closed')) || a.name.localeCompare(b.name));
+      const shown = list.slice(0, S.oLimit || 60);
+      $('#obody').innerHTML = `<div class="oc-grid">${shown.map(oCard).join('') || '<div class="card"><div class="empty">No one here. Try another filter.</div></div>'}</div>
+        ${list.length > shown.length ? `<div style="text-align:center;margin-top:16px"><button class="btn" id="omore">Show ${Math.min(60, list.length - shown.length)} more (${list.length - shown.length} left)</button></div>` : ''}`;
+      const m = $('#omore'); if (m) m.onclick = () => { S.oLimit = (S.oLimit || 60) + 60; draw(); };
+    };
+    v.querySelectorAll('[data-of]').forEach(b => b.onclick = () => { F.f = b.dataset.of; S.oLimit = 60; localStorage.setItem('jt_of', F.f); vOutreach(v); });
+    $('#oq').oninput = e => { F.q = e.target.value; draw(); };
+    $('#oco').onchange = e => { F.co = e.target.value; draw(); };
+    const rerenderCard = id => { const el = v.querySelector(`[data-oid="${id}"]`); const o = S.outreach.find(x => x.id === id); if (el && o) { el.outerHTML = oCard(o); } };
+    v.oninput = e => {
+      const d = e.target.closest('[data-odraft]'); if (d) { const id = +d.dataset.odraft; const o = S.outreach.find(x => x.id === id);
+        const patch = { next_draft: d.value || null, draft_updated_at: new Date().toISOString() };
+        if (o && o.draft_state === 'needs_draft' && d.value.trim()) patch.draft_state = 'ready';
+        saveLater('outreach', id, patch); }
+    };
+    v.onchange = async e => {
+      const s = e.target.closest('[data-ost]'); if (s) { await save('outreach', +s.dataset.ost, { status: s.value }); toast('Status saved'); renderTabs(); return; }
+      const t = e.target.closest('[data-otype]'); if (t) { await save('outreach', +t.dataset.otype, { next_type: t.value || null }); return; }
+      const du = e.target.closest('[data-odue]'); if (du) { await save('outreach', +du.dataset.odue, { next_due: du.value || null }); rerenderCard(+du.dataset.odue); renderTabs(); }
+    };
+    v.onclick = async e => {
+      const o = e.target.closest('[data-open]'); if (o) { openRole(+o.dataset.open); return; }
+      const c = e.target.closest('[data-ocopy]'); if (c) {
+        const ta = v.querySelector(`[data-odraft="${c.dataset.ocopy}"]`); if (!ta.value.trim()) { toast('No draft to copy yet'); return; }
+        try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
+        c.textContent = 'Copied'; setTimeout(() => c.textContent = 'Copy', 1400); return;
+      }
+      const ms = e.target.closest('[data-osent]'); if (ms) {
+        const id = +ms.dataset.osent, row = S.outreach.find(x => x.id === id);
+        const nextN = (row.followups_sent || 0) + (row.next_type === 'nudge' ? 1 : 0);
+        if (!confirm(`Mark the ${row.next_type || 'message'} to ${row.name} as sent today?${nextN >= 2 ? ' That is the second follow-up, so no more nudges get scheduled.' : ' A nudge gets scheduled for 6 days from now.'}`)) return;
+        ms.disabled = true; setSave('saving');
+        const ta = v.querySelector(`[data-odraft="${id}"]`);
+        if (ta && (ta.value || null) !== (row.next_draft || null)) await save('outreach', id, { next_draft: ta.value || null });
+        const { data, error } = await db().rpc('outreach_mark_sent', { p_id: id });
+        if (error) { setSave('err'); toast('Could not mark sent: ' + error.message); ms.disabled = false; return; }
+        Object.assign(row, Array.isArray(data) ? data[0] : data);
+        if (row.task_id) { const t = S.tasks.find(x => x.id === row.task_id); if (t && !t.done) await save('tasks', t.id, { done: true, done_at: new Date().toISOString() }); }
+        await loadOEvents(); setSave('ok'); toast(nextN >= 2 ? 'Marked sent · no more nudges' : `Marked sent · nudge due ${fmtD(row.next_due)}`); rerenderCard(id); renderTabs(); return;
+      }
+      const fb = e.target.closest('[data-ofbs]'); if (fb) {
+        const id = +fb.dataset.ofbs, ta = v.querySelector(`[data-ofb="${id}"]`), txt = (ta.value || '').trim();
+        if (!txt) { toast('Write the feedback first'); return; }
+        fb.disabled = true; setSave('saving');
+        const d = v.querySelector(`[data-odraft="${id}"]`), row = S.outreach.find(x => x.id === id);
+        if (d && (d.value || null) !== (row.next_draft || null)) await save('outreach', id, { next_draft: d.value || null });
+        const { data, error } = await db().rpc('outreach_submit_feedback', { p_id: id, p_text: txt });
+        if (error) { setSave('err'); toast('Could not save feedback: ' + error.message); fb.disabled = false; return; }
+        Object.assign(row, Array.isArray(data) ? data[0] : data);
+        await loadOEvents(); setSave('ok'); toast('Feedback saved · draft flagged for revision'); rerenderCard(id); renderTabs(); return;
+      }
+    };
+    draw();
+  }
+  async function loadOEvents() {
+    const { data } = await db().from('outreach_events').select('*').order('at', { ascending: false }).limit(2000);
+    S.oevents = data || [];
   }
 
   // ---------- New roles ----------

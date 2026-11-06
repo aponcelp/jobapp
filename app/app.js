@@ -567,7 +567,7 @@
       const q = F.q.toLowerCase();
       const ts = o => { const m = o.meeting_at && new Date(o.meeting_at) >= today() ? new Date(o.meeting_at).getTime() : null; return m || (pd(o.next_due) ? pd(o.next_due).getTime() : 9e15); };
       const list = S.outreach.filter(o => oMatch(o, F.f) && (!F.co || o.company === F.co) && (!q || [o.name, o.company, o.title, o.role_label, o.next_draft, o.relation].join(' ').toLowerCase().includes(q)))
-        .sort((a, b) => (ts(a) - ts(b)) || ((a.status === 'closed') - (b.status === 'closed')) || a.name.localeCompare(b.name));
+        .sort((a, b) => (F.f === 'due' ? (ts(b) - ts(a)) : (ts(a) - ts(b))) || ((a.status === 'closed') - (b.status === 'closed')) || a.name.localeCompare(b.name));
       const shown = list.slice(0, S.oLimit || 60);
       $('#obody').innerHTML = `<div class="oc-grid">${shown.map(oCard).join('') || '<div class="card"><div class="empty">No one here. Try another filter.</div></div>'}</div>
         ${list.length > shown.length ? `<div style="text-align:center;margin-top:16px"><button class="btn" id="omore">Show ${Math.min(60, list.length - shown.length)} more (${list.length - shown.length} left)</button></div>` : ''}`;
